@@ -102,6 +102,9 @@ export default function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<Payment | null>(null);
+  const [selectedHRDoc, setSelectedHRDoc] = useState<HRDocument | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [loginError, setLoginError] = useState('');
 
   const refreshData = () => {
@@ -174,6 +177,19 @@ export default function App() {
     });
   };
 
+  const handleExportCustomers = () => {
+    const csv = Papa.unparse(db.customers);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `customers_report_${format(new Date(), 'yyyyMMdd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleAddEmployee = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -188,6 +204,22 @@ export default function App() {
     dbService.addEmployee(newEmployee);
     refreshData();
     setShowAddEmployee(false);
+  };
+
+  const handleUpdateEmployee = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+    const formData = new FormData(e.currentTarget);
+    const updatedEmployee: Employee = {
+      ...editingEmployee,
+      name: formData.get('name') as string,
+      designation: formData.get('designation') as Role,
+      email: formData.get('email') as string,
+      branchId: formData.get('branchId') as string,
+    };
+    dbService.updateEmployee(updatedEmployee);
+    refreshData();
+    setEditingEmployee(null);
   };
 
   const handleDeleteEmployee = (id: string) => {
@@ -212,6 +244,35 @@ export default function App() {
     refreshData();
     setShowHRDoc(null);
     alert(`${showHRDoc.type} Letter issued successfully.`);
+  };
+
+  const handleDownloadHRDoc = (doc: HRDocument) => {
+    const employee = db.employees.find(e => e.id === doc.employeeId);
+    const content = `
+AGRO CREAST PVT LTD
+-------------------
+Date: ${format(parseISO(doc.date), 'PPP')}
+
+To: ${employee?.name}
+Designation: ${employee?.designation}
+
+Subject: ${doc.type} Letter
+
+${doc.content}
+
+-------------------
+Authorized Signature
+HR Department
+    `;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${doc.type}_Letter_${employee?.name.replace(/\s+/g, '_')}.txt`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleAddCustomer = (e: React.FormEvent<HTMLFormElement>) => {
@@ -320,7 +381,6 @@ export default function App() {
   };
 
   const [sortConfig, setSortConfig] = useState<{ key: keyof Loan | 'customerName', direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
-  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
   const handleSort = (key: keyof Loan | 'customerName') => {
     setSortConfig(prev => ({
@@ -684,7 +744,10 @@ export default function App() {
             <Plus size={18} /> Bulk Upload (CSV)
             <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
           </label>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition-all">
+          <button 
+            onClick={handleExportCustomers}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition-all"
+          >
             <Download size={18} /> Export Report
           </button>
           <button 
@@ -711,7 +774,7 @@ export default function App() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredCustomers.map(customer => {
-                const executive = db.executives.find(e => e.id === customer.assignedExecutiveId);
+                const executive = db.employees.find(e => e.id === customer.assignedExecutiveId);
                 return (
                   <tr key={customer.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 font-mono text-sm text-emerald-600 font-semibold">{customer.membershipNo}</td>
@@ -888,12 +951,20 @@ export default function App() {
                     <p className="text-xs text-slate-500">{emp.designation}</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => handleDeleteEmployee(emp.id)}
-                  className="p-2 text-slate-400 hover:text-red-600 transition-colors"
-                >
-                  <AlertCircle size={18} />
-                </button>
+                <div className="flex gap-1">
+                  <button 
+                    onClick={() => setEditingEmployee(emp)}
+                    className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+                  >
+                    <Plus size={18} className="rotate-0" />
+                  </button>
+                  <button 
+                    onClick={() => handleDeleteEmployee(emp.id)}
+                    className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                  >
+                    <AlertCircle size={18} />
+                  </button>
+                </div>
               </div>
               
               <div className="space-y-2 py-3 border-y border-slate-100">
@@ -960,7 +1031,21 @@ export default function App() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">{format(parseISO(doc.date), 'PPP')}</td>
                     <td className="px-6 py-4">
-                      <button className="text-emerald-600 hover:text-emerald-700 font-medium text-sm">View</button>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => setSelectedHRDoc(doc)}
+                          className="text-emerald-600 hover:text-emerald-700 font-medium text-sm"
+                        >
+                          View
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadHRDoc(doc)}
+                          className="text-slate-400 hover:text-emerald-600 transition-colors"
+                          title="Download as Text"
+                        >
+                          <Download size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1037,7 +1122,7 @@ export default function App() {
 
   const LoanDetailsModal = ({ loan }: { loan: Loan }) => {
     const customer = db.customers.find(c => c.id === loan.customerId);
-    const executive = db.executives.find(e => e.id === loan.executiveId);
+    const executive = db.employees.find(e => e.id === loan.executiveId);
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1104,6 +1189,96 @@ export default function App() {
             </div>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  const StaffView = () => {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {db.employees.map(emp => (
+          <div key={emp.id}>
+            <Card className="flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-lg">
+                  {emp.name.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900">{emp.name}</h4>
+                  <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{emp.designation}</p>
+                </div>
+                {canManageHR && (
+                  <div className="ml-auto flex gap-1">
+                    <button 
+                      onClick={() => setEditingEmployee(emp)}
+                      className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+                    >
+                      <Plus size={18} className="rotate-0" />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteEmployee(emp.id)}
+                      className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                    >
+                      <AlertCircle size={18} />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-medium text-slate-500">Branch</span>
+                  <span className="text-xs font-bold text-slate-900">{emp.branchId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-medium text-slate-500">Email</span>
+                  <span className="text-xs font-bold text-slate-900">{emp.email}</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const TasksView = () => {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {db.tasks.map(task => {
+          const employee = db.employees.find(e => e.id === task.assignedToId);
+          return (
+            <div key={task.id}>
+              <Card className="flex flex-col gap-3">
+                <div className="flex justify-between items-start">
+                  <span className={cn(
+                    "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                    task.status === 'Completed' ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                  )}>
+                    {task.status}
+                  </span>
+                  <Clock size={16} className="text-slate-300" />
+                </div>
+                <h4 className="font-bold text-slate-900">{task.title}</h4>
+                <p className="text-sm text-slate-600 line-clamp-2">{task.description}</p>
+                <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Assigned To</span>
+                    <span className="text-xs font-bold text-slate-700">{employee?.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Due Date</span>
+                    <p className="text-xs font-bold text-slate-700">{task.dueDate}</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          );
+        })}
+        {db.tasks.length === 0 && (
+          <div className="col-span-full py-20 text-center">
+            <p className="text-slate-400">No tasks assigned yet.</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -1383,6 +1558,75 @@ export default function App() {
         </div>
       )}
 
+      {editingEmployee && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-xl font-bold text-slate-900">Edit Employee Details</h2>
+              <button onClick={() => setEditingEmployee(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <Plus className="rotate-45" size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateEmployee} className="p-8 space-y-6">
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-700">Full Name</label>
+                <input name="name" required defaultValue={editingEmployee.name} className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                <input name="email" type="email" required defaultValue={editingEmployee.email} className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-700">Designation</label>
+                <select name="designation" required defaultValue={editingEmployee.designation} className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none">
+                  <option value="JuniorExecutive">Junior Executive</option>
+                  <option value="BusinessExecutive">Business Executive</option>
+                  <option value="SeniorExecutive">Senior Executive</option>
+                  <option value="BranchManager">Branch Manager</option>
+                  <option value="Cashier">Cashier</option>
+                  <option value="CustomerRelationOfficer">CRO</option>
+                  <option value="HRManager">HR Manager</option>
+                  <option value="HROfficer">HR Officer</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-700">Branch ID</label>
+                <input name="branchId" required defaultValue={editingEmployee.branchId} className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500/20 outline-none" />
+              </div>
+              <button type="submit" className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all">
+                Update Employee Details
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {selectedHRDoc && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-xl font-bold text-slate-900">{selectedHRDoc.type} Letter</h2>
+              <button onClick={() => setSelectedHRDoc(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <Plus className="rotate-45" size={20} />
+              </button>
+            </div>
+            <div className="p-12 overflow-y-auto max-h-[70vh]">
+              <div className="max-w-2xl mx-auto bg-white p-8 shadow-sm border border-slate-100 font-serif whitespace-pre-wrap text-slate-800 leading-relaxed">
+                {selectedHRDoc.content}
+              </div>
+            </div>
+            <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => window.print()} 
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-all flex items-center gap-2"
+              >
+                <Download size={18} /> Print Document
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHRDoc && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -1658,79 +1902,3 @@ export default function App() {
     </div>
   );
 }
-
-const StaffView = () => {
-  const db = dbService.getDB();
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {db.employees.map(emp => (
-        <div key={emp.id}>
-          <Card className="flex flex-col gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-lg">
-                {emp.name.charAt(0)}
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-900">{emp.name}</h4>
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{emp.designation}</p>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-medium text-slate-500">Branch</span>
-                <span className="text-xs font-bold text-slate-900">{emp.branchId}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-medium text-slate-500">Email</span>
-                <span className="text-xs font-bold text-slate-900">{emp.email}</span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const TasksView = () => {
-  const db = dbService.getDB();
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {db.tasks.map(task => {
-        const employee = db.employees.find(e => e.id === task.assignedToId);
-        return (
-          <div key={task.id}>
-            <Card className="flex flex-col gap-3">
-              <div className="flex justify-between items-start">
-                <span className={cn(
-                  "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
-                  task.status === 'Completed' ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                )}>
-                  {task.status}
-                </span>
-                <Clock size={16} className="text-slate-300" />
-              </div>
-              <h4 className="font-bold text-slate-900">{task.title}</h4>
-              <p className="text-sm text-slate-600 line-clamp-2">{task.description}</p>
-              <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Assigned To</span>
-                  <span className="text-xs font-bold text-slate-700">{employee?.name}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Due Date</span>
-                  <p className="text-xs font-bold text-slate-700">{task.dueDate}</p>
-                </div>
-              </div>
-            </Card>
-          </div>
-        );
-      })}
-      {db.tasks.length === 0 && (
-        <div className="col-span-full py-20 text-center">
-          <p className="text-slate-400">No tasks assigned yet.</p>
-        </div>
-      )}
-    </div>
-  );
-};
